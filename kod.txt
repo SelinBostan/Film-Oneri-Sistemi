@@ -1,0 +1,156 @@
+#Hücre 1
+import tkinter as tk
+from tkinter import ttk
+import pandas as pd
+from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.preprocessing import StandardScaler
+import random
+
+#Hücre 2
+# Kullanıcılar ve yaptığı değerlendirmelerin olduğu veri seti yüklendi
+column_names = ['user_id', 'item_id', 'rating', 'timestamp']
+df = pd.read_csv('users.data', sep='\t', names=column_names)
+
+# Filmler ve kategorilerinin olduğu veri seti yüklendi.
+column_names_movie = ['item_id', 'title', 'category']
+movie_titles = pd.read_csv('movie_titles.data', sep='\t', names=column_names_movie)
+
+# Kategoriler Eklendi.
+categories = ['Drama', 'Komedi', 'Müzikal', 'Romantik', 'Suç', 'Aksiyon', 'Bilim Kurgu', 'Savaş', 'Macera', 'Animasyon', 'Gizem', 'Fantastik', 'Belgesel', 'Spor', 'Gerilim', 'Korku', 'Kovboy', 'Biyografi', 'Aile']
+
+#Hücre 3
+class MovieRecommendationApp:
+    def __init__(self, root):
+        # Arayüze, Sınıf İçerisinde Diğer Fonksiyonların Erişimi İçin Atama Yapıldı
+        self.root = root
+        self.root.title("Movie Recommendation App")
+        
+        # Notebook Widget'ı Sekmeye Yerleştirildi.
+        self.tabControl = ttk.Notebook(self.root)
+
+        # Sayfa 1: Filme Göre Öneri Sekmesi Oluşturuldu.
+        self.page1 = ttk.Frame(self.tabControl)
+        self.tabControl.add(self.page1, text="Filme Göre")
+
+        # Sayfa 2: Kategoriye Göre Öneri Sekmesi Oluşturuldu.
+        self.page2 = ttk.Frame(self.tabControl)
+        self.tabControl.add(self.page2, text="Kategoriye Göre")
+        
+        # Sekmelerin Bulundukları Alanı Doldurmaları Sağlanır.
+        self.tabControl.pack(expand=1, fill="both")
+
+        # Sayfa 1 Öğeleri;
+        self.movie_var = tk.StringVar(value="")
+        self.selected_movies = []
+
+        # Filmler Dropdown List Olarak Eklendi.
+        self.movie_dropdown = ttk.Combobox(self.page1, values=movie_titles['title'].tolist(), textvariable=self.movie_var,
+                                           state="readonly")
+        self.movie_dropdown.grid(row=0, column=0, padx=10, pady=10)
+
+        # Seçilen Filmi Listeye Ekleme Butonu Oluşturuldu ve "add_movie(self)" Fonksiyonu Görev Olarak Atandı.
+        self.add_button = tk.Button(self.page1, text="Ekle", command=self.add_movie)
+        self.add_button.grid(row=0, column=1, padx=10, pady=10)
+
+        # Seçilen Filmlerin Ekleneceği Liste Penceresi Oluşturuldu.
+        self.movies_listbox = tk.Listbox(self.page1, selectmode=tk.MULTIPLE, height=5)
+        self.movies_listbox.grid(row=1, column=0, columnspan=2, padx=10, pady=10)
+
+        # Öner Butonu Oluşturuldu ve "get_movie_recommendations(self)" Fonksiyonu Görev Olarak Atandı.
+        self.recommend_button = tk.Button(self.page1, text="Öner", command=self.get_movie_recommendations)
+        self.recommend_button.grid(row=2, column=0, columnspan=2, pady=10)
+
+        # Sayfa 2 Öğeleri
+        self.category_var = tk.StringVar()
+        
+        # Kategoriler Dropdown List Olarak Eklendi.
+        self.category_dropdown = ttk.Combobox(self.page2, values=categories, textvariable=self.category_var, state="readonly")
+        self.category_dropdown.grid(row=0, column=0, padx=10, pady=10)
+
+        # Öner Butonu Oluşturuldu ve "get_category_recommendations(self)" Fonksiyonu Görev Olarak Atandı.
+        self.recommend_button_category = tk.Button(self.page2, text="Öner", command=self.get_category_recommendations)
+        self.recommend_button_category.grid(row=1, column=0, pady=10)
+
+    # Filme Göre Öneri Penceresindeki Seçilen Filmin Listeye Eklenmesini Sağlayan Fonksiyon.
+    def add_movie(self):
+        movie = self.movie_var.get()
+        if movie and movie not in self.selected_movies:
+            self.selected_movies.append(movie)
+            self.movies_listbox.insert(tk.END, movie)
+
+    def get_movie_recommendations(self):
+        # Veri çerçevelerini "item_id" ye göre birleştirir.
+        selected_movies_data = pd.merge(df, movie_titles, on='item_id')
+        # Kullanıcılar ve Filmlere Verdikleri Puanların Bulunduğu Pivot Tablo Oluşturulur.
+        user_movie_ratings = selected_movies_data.pivot_table(index='user_id', columns='title', values='rating',
+                                                              fill_value=0)
+
+        # Pivot tabloyu kullanıcıların benzerliklerini ölçmek için standartlaştırın
+        scaler = StandardScaler()
+        scaled_ratings = scaler.fit_transform(user_movie_ratings)
+
+        # Cosine Similarity matrisini hesaplayın
+        similarity_matrix = cosine_similarity(scaled_ratings)
+
+        # Kullanıcının seçtiği filmler için benzer filmleri belirleyin
+        similar_movies = pd.DataFrame(similarity_matrix, index=user_movie_ratings.index,
+                                      columns=user_movie_ratings.index)
+        # Benzerlikler Toplanır.
+        similar_movies = similar_movies.sum(axis=1)
+        # Filmler Benzerlik Puanlarına Göre Büyükten Küçüğe Sıralanır.
+        similar_movies = similar_movies.sort_values(ascending=False)
+
+        # Benzerliklerine Göre Sıralanmış Filmler Arasından İlk 30 Film Bir Listeye Atılır.
+        recommended_movies = similar_movies.head(30).index
+
+        # 30 Filmlik Listeden Rastgele 5 Film Seçilir.
+        random_recommended_movies = random.sample(list(recommended_movies), min(5, len(recommended_movies)))
+
+        # Önerilmek İçin Seçilen 5 Film Ekrana Bastırılır.
+        print("Önerilen Filmler:")
+        print(movie_titles.loc[random_recommended_movies, 'title'])
+
+    def get_category_recommendations(self):
+        # Arayüzde seçilen kategoriyi çek
+        selected_category = self.category_var.get()
+        if selected_category:
+            # Seçilen kategoriye ait filmleri filtrele
+            category_movies = movie_titles[movie_titles['category'] == selected_category]['item_id'].tolist()
+
+            # Seçilen kategoriye ait en az 100 değerlendirme almış filmleri puanlarına göre büyükten küçüğe sırala
+            category_ratings = df[df['item_id'].isin(category_movies)].groupby('item_id')['rating'].agg(['count', 'mean'])
+            eligible_movies = category_ratings[category_ratings['count'] >= 100].sort_values(by='mean', ascending=False).index
+            
+            # Film sayısı 30'dan fazlaysa;
+            if len(eligible_movies) >= 30:
+                # Sıralanmış ilk 30 film arasında rastgele 5 filmi öneri listesine at
+                recommended_movies = random.sample(list(eligible_movies)[:30], min(5, len(eligible_movies)))
+
+            # Eğer 30 filmden az film kaldıysa
+            if len(eligible_movies) < 30:
+                # Değerlendirme filtresini 50'ye düşür aynı işlemleri tekrarla
+                eligible_movies = category_ratings[category_ratings['count'] >= 50].sort_values(by='mean', ascending=False).index
+                
+                # Film sayısı 30'dan fazlaysa;
+                if len(eligible_movies) >= 30:
+                    # Sıralanmış ilk 30 film arasında rastgele 5 filmi öneri listesine at
+                    recommended_movies = random.sample(list(eligible_movies)[:30], min(5, len(eligible_movies)))
+                    
+                # Eğer hala 30'dan az 5'den fazla film varsa;
+                if 30 > len(eligible_movies) > 5:
+                    # Bu filmler arasında rastgele 5 tanesini öneri listesine at
+                    recommended_movies = random.sample(list(eligible_movies), min(5, len(eligible_movies)))
+                    
+                # Eğer film sayısı 5 veya 5'den azsa;
+                if len(eligible_movies) <= 5:
+                    # Bütün filmleri öneri listesine at
+                    recommended_movies = list(eligible_movies)
+
+            # Önerilen filmleri ekrana bastır
+            print("Önerilen Filmler (Kategoriye Göre):")
+            print(movie_titles.loc[recommended_movies, 'title'])
+
+#Hücre 4
+root = tk.Tk()
+app = MovieRecommendationApp(root)
+root.mainloop()
